@@ -51,7 +51,7 @@ All instances share the board's BLE peripheral, HID service and contact state. M
 | Method | Behavior |
 | --- | --- |
 | `begin(name, manufacturer)` | Starts the peripheral. Defaults to `"BW16 Touch"` and `"BW16BLETouch"`. Name and manufacturer accept 1–18 and 1–20 UTF-8 bytes respectively. Invalid arguments or a second call while running return false. |
-| `isConnected()` | Reports BLE link state. Allow time after pairing for Android to discover HID and subscribe. Polling also clears local contact state when a disconnect is observed. |
+| `isConnected()` | Reports BLE link state. Allow time after pairing for Android to discover HID and subscribe. On the development branch, a stack disconnect invalidates the active contact even when the sketch makes no calls while offline. After reconnection, start a fresh press. |
 | `end()` | Releases an active contact if possible, disconnects and shuts down BLE. Resolution and rotation persist in RAM. |
 | `setScreenResolution(w,h)` | Sets the current screenshot width and height, each from 1 to 32768. Required for pixel methods after a board reset. |
 | `setRotation(degrees)` | Accepts 0 (default), 90, 180 or 270. Both mapping setters reject changes during an active press. |
@@ -128,6 +128,10 @@ Across the six network gesture tests the largest per-axis endpoint difference re
 ## HID report
 
 The single-finger Digitizers / Touch Screen descriptor uses report ID 1. Each input report has seven bytes: tip switch, contact ID, little-endian X, little-endian Y, and contact count. A lift clears the tip switch and still describes one contact record. GATT carries the report ID separately. One reserved output byte avoids an SDK 3.1.7 zero-length allocation during setup. Two-finger pinch would require a different descriptor.
+
+## Regression tests
+
+The [host regression test](tests/README.md) exercises disconnect and reconnect between sketch calls, including interrupted gestures.
 
 ## License
 

@@ -1,6 +1,8 @@
 #include "BW16BLETouch.h"
+#include <atomic>
 #include <BLEDevice.h>
 #include <BLEHIDDevice.h>
+#include <profile_client.h>
 #include <string.h>
 
 namespace {
@@ -38,6 +40,22 @@ const uint16_t hidMax = 32767;
 bool hidInitialized = false;
 bool running = false;
 bool touching = false;
+// The stack reuses slot 0, including when the same bonded peer reconnects.
+// The callback runs on the BLE task. Gesture state belongs to the sketch task.
+std::atomic<uint32_t> linkEpoch{0};
+uint32_t contactEpoch = 0;
+
+void onDisconnect(uint8_t connId) {
+    if (connId == 0) ++linkEpoch;
+}
+
+bool registerDisconnectObserver() {
+    static T_FUN_CLIENT_CBS callbacks{};
+    callbacks.disconnect_cb = onDisconnect;
+    T_CLIENT_ID id;
+    client_init(1);
+    return client_register_spec_client_cb(&id, &callbacks);
+}
 uint16_t width = 0, height = 0, rotation = 0;
 Point last = {0, 0};
 
@@ -65,25 +83,31 @@ bool mapPoint(int32_t x, int32_t y, BW16BLETouch::Units units, Point& out) {
     return true;
 }
 
-bool sendPoint(Point point, bool down) {
-    if (!BW16BLETouch::isConnected()) return false;
+bool sendPoint(Point point, bool down, uint32_t epoch) {
+    if (!BW16BLETouch::isConnected() || linkEpoch.load() != epoch) return false;
     uint8_t report[] = {uint8_t(down), 0, uint8_t(point.x), uint8_t(point.x >> 8),
                         uint8_t(point.y), uint8_t(point.y >> 8), 1};
     BLEHIDDev.inputReport(touchReportId, report, sizeof(report));
     last = point;
+    contactEpoch = epoch;
     touching = down;
-    return true;
+    return linkEpoch.load() == epoch;
 }
 
-bool waitConnected(unsigned long start, uint16_t dueMs) {
+bool waitConnected(unsigned long start, uint16_t dueMs, uint32_t epoch) {
     while (millis() - start < dueMs) {
-        if (!BW16BLETouch::isConnected()) return false;
+        if (!BW16BLETouch::isConnected() || linkEpoch.load() != epoch) return false;
         unsigned long elapsed = millis() - start;
         if (elapsed >= dueMs) break;
         unsigned long remaining = dueMs - elapsed;
         delay(remaining < 10 ? remaining : 10);
     }
-    return BW16BLETouch::isConnected();
+    return BW16BLETouch::isConnected() && linkEpoch.load() == epoch;
+}
+
+bool tapPoint(Point point, uint16_t holdMs, uint32_t epoch) {
+    return !touching && sendPoint(point, true, epoch) &&
+           waitConnected(millis(), holdMs, epoch) && sendPoint(point, false, epoch);
 }
 } // namespace
 
@@ -118,12 +142,18 @@ bool BW16BLETouch::begin(const char* name, const char* manufacturer) {
     BLE.addService(BLEHIDDev.hidService());
     BLE.addService(BLEHIDDev.battService());
     BLE.addService(BLEHIDDev.devInfoService());
+    const bool observing = registerDisconnectObserver();
     BLE.beginPeripheral();
+    if (!observing) {
+        BLE.deinit();
+        return false;
+    }
     running = true;
     return true;
 }
 
 bool BW16BLETouch::isConnected() {
+    if (contactEpoch != linkEpoch.load()) touching = false;
     if (running && BLE.connected()) return true;
     touching = false;
     return false;
@@ -160,25 +190,31 @@ bool BW16BLETouch::setRotation(uint16_t degrees) {
 }
 
 bool BW16BLETouch::press(int32_t x, int32_t y, Units units) {
+    const uint32_t epoch = linkEpoch.load();
     Point p;
-    return isConnected() && !touching && mapPoint(x, y, units, p) && sendPoint(p, true);
+    return isConnected() && !touching && mapPoint(x, y, units, p) && sendPoint(p, true, epoch);
 }
 
 bool BW16BLETouch::moveTo(int32_t x, int32_t y, Units units) {
     Point p;
-    return isConnected() && touching && mapPoint(x, y, units, p) && sendPoint(p, true);
+    return isConnected() && touching && mapPoint(x, y, units, p) && sendPoint(p, true, contactEpoch);
 }
 
 bool BW16BLETouch::release() {
-    return isConnected() && touching && sendPoint(last, false);
+    return isConnected() && touching && sendPoint(last, false, contactEpoch);
 }
 
 bool BW16BLETouch::tap(int32_t x, int32_t y, uint16_t holdMs, Units units) {
-    return press(x, y, units) && waitConnected(millis(), holdMs) && release();
+    const uint32_t epoch = linkEpoch.load();
+    Point p;
+    return isConnected() && mapPoint(x, y, units, p) && tapPoint(p, holdMs, epoch);
 }
 
 bool BW16BLETouch::doubleTap(int32_t x, int32_t y, uint16_t intervalMs, Units units) {
-    return tap(x, y, 60, units) && waitConnected(millis(), intervalMs) && tap(x, y, 60, units);
+    const uint32_t epoch = linkEpoch.load();
+    Point p;
+    return isConnected() && mapPoint(x, y, units, p) && tapPoint(p, 60, epoch) &&
+           waitConnected(millis(), intervalMs, epoch) && tapPoint(p, 60, epoch);
 }
 
 bool BW16BLETouch::longPress(int32_t x, int32_t y, uint16_t holdMs, Units units) {
@@ -188,17 +224,18 @@ bool BW16BLETouch::longPress(int32_t x, int32_t y, uint16_t holdMs, Units units)
 bool BW16BLETouch::swipe(int32_t x1, int32_t y1, int32_t x2, int32_t y2,
                          uint16_t durationMs, uint16_t steps, Units units) {
     Point start, finish;
+    const uint32_t epoch = linkEpoch.load();
     if (!steps || steps > durationMs || !isConnected() || touching ||
         !mapPoint(x1, y1, units, start) || !mapPoint(x2, y2, units, finish)) return false;
-    if (!sendPoint(start, true)) return false;
+    if (!sendPoint(start, true, epoch)) return false;
     const unsigned long started = millis();
     const int32_t dx = int32_t(finish.x) - start.x;
     const int32_t dy = int32_t(finish.y) - start.y;
     for (int32_t i = 1; i <= steps; ++i) {
         const uint16_t due = uint16_t((uint32_t(durationMs) * i) / steps);
-        if (!waitConnected(started, due)) return false;
+        if (!waitConnected(started, due, epoch)) return false;
         Point next = {uint16_t(start.x + dx * i / steps), uint16_t(start.y + dy * i / steps)};
-        if (!sendPoint(next, true)) return false;
+        if (!sendPoint(next, true, epoch)) return false;
     }
     return release();
 }

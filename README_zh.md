@@ -71,7 +71,7 @@ touch.swipePixel(180, 1600, 900, 1600, 600, 30);  // 向右滑动
 所有带 `units` 的方法默认使用 `Units::Hid`，显式传入 `Units::Pixels` 可使用像素坐标。另有 `pressPixel(x,y)`、`moveToPixel(x,y)`、`tapPixel(x,y,holdMs=60)`、`doubleTapPixel(x,y,intervalMs=120)`、`longPressPixel(x,y,holdMs=800)` 和 `swipePixel(x1,y1,x2,y2,durationMs=400,steps=20)` 简写。
 
 
-手势的时长、间隔和步数参数为 uint16_t。建议先按每 15–30 ms 一步调试滑动。成功返回 true 表示调用已向本地 BLE 栈提交所需报告。AmebaBLE 的 `inputReport()` 返回 void，无法提供主机接收确认。断连、坐标越界、未配置像素尺寸或触点状态不匹配时返回 false。分步拖拽中若移动参数有误，仍可在最后有效位置调用 `release()`。在应用主循环轮询 `isConnected()` 可及时清除已断开链路的本地触点状态。
+手势的时长、间隔和步数参数为 uint16_t。建议先按每 15–30 ms 一步调试滑动。成功返回 true 表示调用已向本地 BLE 栈提交所需报告。AmebaBLE 的 `inputReport()` 返回 void，无法提供主机接收确认。断连、坐标越界、未配置像素尺寸或触点状态不匹配时返回 false。分步拖拽中若移动参数有误，仍可在最后有效位置调用 `release()`。开发分支会根据蓝牙栈的断连通知让旧触点失效，即使草图在离线期间没有调用库。重连后请重新按下。
 
 ## 选择坐标系
 
@@ -158,6 +158,10 @@ curl -X POST http://192.168.1.50/px/1080/2400/swipe/180/1600/900/1600/600/30
 使用单指 Digitizers / Touch Screen Report Map，Report ID 为 1。输入帧是 7 字节，依次为 Tip、Contact ID、X 低字节、X 高字节、Y 低字节、Y 高字节、Contact Count。按下和移动用 Tip=1，抬起用 Tip=0。抬起帧仍包含一条记录，因此 Contact Count=1。Report ID 由 GATT Report Reference 携带。保留一字节的保留输出报告及一个输出特征，避免 AmebaD 3.1.7 在初始化零个输出报告时调用 malloc(0)。
 
 当前描述符一次只能描述一个触点。`pinch` 需要能携带两个独立 Contact ID 及各自位置、状态的报告，并需在 Android 上重新配对、验证双指的按下、移动与抬起。本版提供单指 API。
+
+## 回归测试
+
+[主机回归测试](tests/README.md)覆盖草图两次调用之间的断线重连，以及手势执行期间的断线。
 
 ## 许可
 
