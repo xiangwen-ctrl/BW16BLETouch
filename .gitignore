@@ -1,0 +1,7 @@
+/build/
+*.bin
+*.axf
+*.elf
+*.zip
+.DS_Store
+Thumbs.db

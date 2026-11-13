@@ -1,0 +1,17 @@
+BW16BLETouch	KEYWORD1
+Units	KEYWORD1
+begin	KEYWORD2
+isConnected	KEYWORD2
+end	KEYWORD2
+setScreenResolution	KEYWORD2
+setRotation	KEYWORD2
+press	KEYWORD2
+moveTo	KEYWORD2
+release	KEYWORD2
+tap	KEYWORD2
+doubleTap	KEYWORD2
+longPress	KEYWORD2
+swipe	KEYWORD2
+pressPixel	KEYWORD2
+moveToPixel	KEYWORD2
+tapPixel	KEYWORD2
