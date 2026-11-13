@@ -4,6 +4,7 @@
 
 extern unsigned long nowMs;
 extern bool linkUp;
+extern bool stackReady;
 inline unsigned long millis() { return nowMs; }
 void delay(unsigned long ms);
 
@@ -32,7 +33,7 @@ struct FakeBLE {
     }
     bool connected() { return linkUp; }
     void init() {}
-    void deinit() {}
+    void deinit() { stackReady = false; }
     void setPairable(bool) {}
     void setAuthFlags(int) {}
     void configServer(int) {}
@@ -40,6 +41,6 @@ struct FakeBLE {
     void setDeviceAppearance(int) {}
     void setDeviceName(const char*) {}
     void setAdvData(BLEAdvertData) {}
-    void beginPeripheral() {}
+    void beginPeripheral() { stackReady = true; }
 };
 extern FakeBLE BLE;

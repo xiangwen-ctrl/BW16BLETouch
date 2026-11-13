@@ -142,9 +142,9 @@ bool BW16BLETouch::begin(const char* name, const char* manufacturer) {
     BLE.addService(BLEHIDDev.hidService());
     BLE.addService(BLEHIDDev.battService());
     BLE.addService(BLEHIDDev.devInfoService());
-    const bool observing = registerDisconnectObserver();
     BLE.beginPeripheral();
-    if (!observing) {
+    // Realtek client_init() needs the running stack and its configured link count.
+    if (!registerDisconnectObserver()) {
         BLE.deinit();
         return false;
     }

@@ -7,6 +7,7 @@ FakeBLE BLE;
 FakeHid BLEHIDDev;
 const T_FUN_CLIENT_CBS* registeredClient = nullptr;
 bool linkUp = false;
+bool stackReady = false;
 unsigned long nowMs = 0;
 unsigned long reconnectAt = 0;
 std::vector<std::array<uint8_t,7>> reports;

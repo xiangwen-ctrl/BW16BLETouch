@@ -6,8 +6,10 @@ struct T_FUN_CLIENT_CBS {
     void (*disconnect_cb)(uint8_t);
 };
 extern const T_FUN_CLIENT_CBS* registeredClient;
+extern bool stackReady;
 inline void client_init(uint8_t) { registeredClient = nullptr; }
 inline bool client_register_spec_client_cb(T_CLIENT_ID* id, const T_FUN_CLIENT_CBS* cb) {
+    if (!stackReady) return false;
     *id = 0;
     registeredClient = cb;
     return true;
