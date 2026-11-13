@@ -30,7 +30,7 @@ void loop() {
 ```
 
 1. 在 Arduino IDE 安装 Realtek **AmebaD 3.1.7** 板卡包，并选择 **Ai-Thinker BW16 (RTL8720DN)**。首次配置可参考 [Realtek BW16 安装指南](https://ameba-doc-arduino-sdk.readthedocs-hosted.com/en/latest/ameba_d/bw16-typeb/Getting_Started/Getting%20Started%20with%20BW16.html)。
-2. 从 [v0.3.0 发布页](https://github.com/xiangwen-ctrl/BW16BLETouch/releases/tag/v0.3.0) 下载 `BW16BLETouch-0.3.0.zip`，选择「项目 → 加载库 → 添加 .ZIP 库」。手动安装时，将仓库目录放到草图簿的 `libraries/BW16BLETouch` 下，确保目录内直接包含 `library.properties`。
+2. 从 [v0.3.1 发布页](https://github.com/xiangwen-ctrl/BW16BLETouch/releases/tag/v0.3.1) 下载 `BW16BLETouch-0.3.1.zip`，选择「项目 → 加载库 → 添加 .ZIP 库」。手动安装时，将仓库目录放到草图簿的 `libraries/BW16BLETouch` 下，确保目录内直接包含 `library.properties`。
 3. 新建草图，粘贴以上代码，选择 BW16 的 USB 串口并上传。按 RST 后，在 Android 系统蓝牙设置中配对 **BW16 Touch**。
 4. 打开绘图或触点测试页面，将 Arduino 串口监视器设为 **115200**，发送字母 `t`。屏幕中心应收到一次点击。自己的按钮或定时器可以直接调用同一个 `touch.tap()`。
 
@@ -71,7 +71,7 @@ touch.swipePixel(180, 1600, 900, 1600, 600, 30);  // 向右滑动
 所有带 `units` 的方法默认使用 `Units::Hid`，显式传入 `Units::Pixels` 可使用像素坐标。另有 `pressPixel(x,y)`、`moveToPixel(x,y)`、`tapPixel(x,y,holdMs=60)`、`doubleTapPixel(x,y,intervalMs=120)`、`longPressPixel(x,y,holdMs=800)` 和 `swipePixel(x1,y1,x2,y2,durationMs=400,steps=20)` 简写。
 
 
-手势的时长、间隔和步数参数为 uint16_t。建议先按每 15–30 ms 一步调试滑动。成功返回 true 表示调用已向本地 BLE 栈提交所需报告。AmebaBLE 的 `inputReport()` 返回 void，无法提供主机接收确认。断连、坐标越界、未配置像素尺寸或触点状态不匹配时返回 false。分步拖拽中若移动参数有误，仍可在最后有效位置调用 `release()`。开发分支会根据蓝牙栈的断连通知让旧触点失效，即使草图在离线期间没有调用库。重连后请重新按下。
+手势的时长、间隔和步数参数为 uint16_t。建议先按每 15–30 ms 一步调试滑动。成功返回 true 表示调用已向本地 BLE 栈提交所需报告。AmebaBLE 的 `inputReport()` 返回 void，无法提供主机接收确认。断连、坐标越界、未配置像素尺寸或触点状态不匹配时返回 false。分步拖拽中若移动参数有误，仍可在最后有效位置调用 `release()`。库会根据蓝牙栈的断连通知让旧触点失效，即使草图在离线期间没有调用库。重连后请重新按下。
 
 ## 选择坐标系
 

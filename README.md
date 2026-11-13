@@ -29,7 +29,7 @@ void loop() {
 ```
 
 1. Install the Realtek **AmebaD 3.1.7** board package and select **Ai-Thinker BW16 (RTL8720DN)**. The package provides AmebaBLE and WiFi. See the [Realtek setup guide](https://ameba-doc-arduino-sdk.readthedocs-hosted.com/en/latest/ameba_d/bw16-typeb/Getting_Started/Getting%20Started%20with%20BW16.html).
-2. Download `BW16BLETouch-0.3.0.zip` from the [release page](https://github.com/xiangwen-ctrl/BW16BLETouch/releases/tag/v0.3.0). In Arduino IDE choose **Sketch → Include Library → Add .ZIP Library**. For manual installation, put the repository under the sketchbook's `libraries/BW16BLETouch` directory with `library.properties` directly inside.
+2. Download `BW16BLETouch-0.3.1.zip` from the [release page](https://github.com/xiangwen-ctrl/BW16BLETouch/releases/tag/v0.3.1). In Arduino IDE choose **Sketch → Include Library → Add .ZIP Library**. For manual installation, put the repository under the sketchbook's `libraries/BW16BLETouch` directory with `library.properties` directly inside.
 3. Upload the sketch and reset the board. Pair **BW16 Touch** in Android's Bluetooth settings. Open a drawing or touch-test app.
 4. Set Serial Monitor to **115200** and send `t` to tap the center. Call the same method from a button or timer in your own sketch.
 
@@ -51,7 +51,7 @@ All instances share the board's BLE peripheral, HID service and contact state. M
 | Method | Behavior |
 | --- | --- |
 | `begin(name, manufacturer)` | Starts the peripheral. Defaults to `"BW16 Touch"` and `"BW16BLETouch"`. Name and manufacturer accept 1–18 and 1–20 UTF-8 bytes respectively. Invalid arguments or a second call while running return false. |
-| `isConnected()` | Reports BLE link state. Allow time after pairing for Android to discover HID and subscribe. On the development branch, a stack disconnect invalidates the active contact even when the sketch makes no calls while offline. After reconnection, start a fresh press. |
+| `isConnected()` | Reports BLE link state. Allow time after pairing for Android to discover HID and subscribe. A stack disconnect invalidates the active contact even when the sketch makes no calls while offline. After reconnection, start a fresh press. |
 | `end()` | Releases an active contact if possible, disconnects and shuts down BLE. Resolution and rotation persist in RAM. |
 | `setScreenResolution(w,h)` | Sets the current screenshot width and height, each from 1 to 32768. Required for pixel methods after a board reset. |
 | `setRotation(degrees)` | Accepts 0 (default), 90, 180 or 270. Both mapping setters reject changes during an active press. |
