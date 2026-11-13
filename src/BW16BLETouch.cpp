@@ -93,6 +93,8 @@ bool BW16BLETouch::begin(const char* name, const char* manufacturer) {
     if (running || !name || !*name || strlen(name) > 18 ||
         !manufacturer || !*manufacturer || strlen(manufacturer) > 20) return false;
     if (!hidInitialized) {
+        // AmebaD 3.1.7 retains these HID service objects across BLE.deinit().
+        // Allocate them once, then register them below on every BLE start.
         BLEHIDDev.setNumInputReport(1);
         BLEHIDDev.setNumOutputReport(1); // SDK 3.1.7 allocates even with count zero.
         BLEHIDDev.init();

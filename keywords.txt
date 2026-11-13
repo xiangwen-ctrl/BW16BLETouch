@@ -15,3 +15,6 @@ swipe	KEYWORD2
 pressPixel	KEYWORD2
 moveToPixel	KEYWORD2
 tapPixel	KEYWORD2
+doubleTapPixel	KEYWORD2
+longPressPixel	KEYWORD2
+swipePixel	KEYWORD2

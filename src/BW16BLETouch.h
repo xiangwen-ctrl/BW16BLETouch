@@ -31,4 +31,14 @@ public:
     static bool tapPixel(int32_t x, int32_t y, uint16_t holdMs = 60) {
         return tap(x, y, holdMs, Units::Pixels);
     }
+    static bool doubleTapPixel(int32_t x, int32_t y, uint16_t intervalMs = 120) {
+        return doubleTap(x, y, intervalMs, Units::Pixels);
+    }
+    static bool longPressPixel(int32_t x, int32_t y, uint16_t holdMs = 800) {
+        return longPress(x, y, holdMs, Units::Pixels);
+    }
+    static bool swipePixel(int32_t x1, int32_t y1, int32_t x2, int32_t y2,
+                           uint16_t durationMs = 400, uint16_t steps = 20) {
+        return swipe(x1, y1, x2, y2, durationMs, steps, Units::Pixels);
+    }
 };
