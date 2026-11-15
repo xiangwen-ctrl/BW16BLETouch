@@ -109,6 +109,19 @@ bool tapPoint(Point point, uint16_t holdMs, uint32_t epoch) {
     return !touching && sendPoint(point, true, epoch) &&
            waitConnected(millis(), holdMs, epoch) && sendPoint(point, false, epoch);
 }
+
+bool moveLine(Point start, Point finish, uint16_t durationMs, uint16_t steps, uint32_t epoch) {
+    const unsigned long started = millis();
+    const int32_t dx = int32_t(finish.x) - start.x;
+    const int32_t dy = int32_t(finish.y) - start.y;
+    for (int32_t i = 1; i <= steps; ++i) {
+        const uint16_t due = uint16_t((uint32_t(durationMs) * i) / steps);
+        if (!waitConnected(started, due, epoch)) return false;
+        Point next = {uint16_t(start.x + dx * i / steps), uint16_t(start.y + dy * i / steps)};
+        if (!sendPoint(next, true, epoch)) return false;
+    }
+    return true;
+}
 } // namespace
 
 bool BW16BLETouch::begin(const char* name, const char* manufacturer) {
@@ -223,19 +236,41 @@ bool BW16BLETouch::longPress(int32_t x, int32_t y, uint16_t holdMs, Units units)
 
 bool BW16BLETouch::swipe(int32_t x1, int32_t y1, int32_t x2, int32_t y2,
                          uint16_t durationMs, uint16_t steps, Units units) {
+    return longPressDrag(x1, y1, x2, y2, 0, durationMs, steps, units);
+}
+
+bool BW16BLETouch::longPressDrag(int32_t x1, int32_t y1, int32_t x2, int32_t y2,
+                                 uint16_t holdMs, uint16_t durationMs, uint16_t steps, Units units) {
     Point start, finish;
     const uint32_t epoch = linkEpoch.load();
     if (!steps || steps > durationMs || !isConnected() || touching ||
         !mapPoint(x1, y1, units, start) || !mapPoint(x2, y2, units, finish)) return false;
     if (!sendPoint(start, true, epoch)) return false;
-    const unsigned long started = millis();
-    const int32_t dx = int32_t(finish.x) - start.x;
-    const int32_t dy = int32_t(finish.y) - start.y;
-    for (int32_t i = 1; i <= steps; ++i) {
-        const uint16_t due = uint16_t((uint32_t(durationMs) * i) / steps);
-        if (!waitConnected(started, due, epoch)) return false;
-        Point next = {uint16_t(start.x + dx * i / steps), uint16_t(start.y + dy * i / steps)};
-        if (!sendPoint(next, true, epoch)) return false;
+    return waitConnected(millis(), holdMs, epoch) &&
+           moveLine(start, finish, durationMs, steps, epoch) &&
+           sendPoint(finish, false, epoch);
+}
+
+bool BW16BLETouch::swipePath(const PathPoint* points, size_t count,
+                             uint16_t stepsPerSegment, Units units) {
+    const uint32_t epoch = linkEpoch.load();
+    if (!points || count < 2 || !stepsPerSegment ||
+        !isConnected() || touching || points[0].travelMs != 0) return false;
+    Point mapped;
+    for (size_t i = 0; i < count; ++i) {
+        if (!mapPoint(points[i].x, points[i].y, units, mapped) ||
+            (i > 0 && points[i].travelMs < stepsPerSegment)) return false;
     }
-    return release();
+    Point previous;
+    if (!mapPoint(points[0].x, points[0].y, units, previous) ||
+        !sendPoint(previous, true, epoch) ||
+        !waitConnected(millis(), points[0].holdMs, epoch)) return false;
+    for (size_t i = 1; i < count; ++i) {
+        Point next;
+        if (!mapPoint(points[i].x, points[i].y, units, next) ||
+            !moveLine(previous, next, points[i].travelMs, stepsPerSegment, epoch) ||
+            !waitConnected(millis(), points[i].holdMs, epoch)) return false;
+        previous = next;
+    }
+    return sendPoint(previous, false, epoch);
 }

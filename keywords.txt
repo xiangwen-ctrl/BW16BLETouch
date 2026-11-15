@@ -18,3 +18,8 @@ tapPixel	KEYWORD2
 doubleTapPixel	KEYWORD2
 longPressPixel	KEYWORD2
 swipePixel	KEYWORD2
+PathPoint	KEYWORD1
+longPressDrag	KEYWORD2
+longPressDragPixel	KEYWORD2
+swipePath	KEYWORD2
+swipePathPixel	KEYWORD2

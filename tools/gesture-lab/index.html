@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  />
+  <title>BW16 手势验收</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #f4f5ef;
+      color: #1d302a;
+      font:
+        16px/1.5 system-ui,
+        sans-serif;
+    }
+    main {
+      width: min(46rem, 100%);
+      margin: auto;
+      padding: clamp(14px, 4vw, 32px);
+    }
+    h1 {
+      font-size: clamp(23px, 4vw, 34px);
+      margin: 0 0 12px;
+    }
+    nav,
+    footer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    button {
+      font: inherit;
+      cursor: pointer;
+      color: inherit;
+      background: white;
+      border: 1px solid #a8b8ad;
+      border-radius: 6px;
+      padding: 7px 12px;
+    }
+    button[aria-pressed="true"] {
+      color: white;
+      background: #205b48;
+      border-color: #205b48;
+    }
+    #arena {
+      position: relative;
+      height: clamp(210px, 36vh, 350px);
+      background: #fff;
+      border-radius: 10px;
+      outline: 1px solid #c7d2c8;
+      overflow: hidden;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #list {
+      position: absolute;
+      inset: 10% 12%;
+      display: grid;
+      grid-template-rows: repeat(3, 1fr);
+      gap: 7px;
+    }
+    .row {
+      border: 1px solid #ccd6cb;
+      border-radius: 6px;
+      background: #f6f8f2;
+      display: flex;
+      align-items: center;
+      padding-left: 8%;
+      font-weight: 600;
+    }
+    .row:first-child {
+      border-left: 5px solid #247957;
+    }
+    .armed {
+      background: #c8edd9;
+    }
+    .target {
+      outline: 3px solid #327755;
+    }
+    svg {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      inset: 0;
+      pointer-events: none;
+    }
+    .lane {
+      fill: none;
+      stroke: #dcebe0;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .trace {
+      fill: none;
+      stroke: #14755c;
+      stroke-width: 3;
+      stroke-linejoin: round;
+      stroke-linecap: round;
+    }
+    circle {
+      fill: white;
+      stroke: #42775d;
+      stroke-width: 2;
+    }
+    text {
+      font: bold 14px system-ui;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    [hidden] {
+      display: none !important;
+    }
+    #status {
+      display: block;
+      margin: 12px 0;
+      font-weight: 600;
+    }
+    #status[data-ok="true"] {
+      color: #10633e;
+    }
+    #status[data-ok="false"] {
+      color: #9d3224;
+    }
+    details {
+      margin-top: 1em;
+    }
+    pre {
+      font-size: 13px;
+      white-space: pre-wrap;
+    }
+    footer {
+      margin-top: 12px;
+    }
+  </style>
+  <main>
+    <h1>BW16 手势验收</h1>
+    <nav aria-label="手势">
+      <button id="drag" aria-pressed="true">长按排序</button
+      ><button id="path" aria-pressed="false">折线路径</button
+      ><button id="relay" aria-pressed="false">长按折返与停靠</button>
+    </nav>
+    <p id="hint"></p>
+    <div id="arena">
+      <div id="list"></div>
+      <svg id="plot" hidden></svg>
+    </div>
+    <output id="status" aria-live="polite"></output>
+    <footer>
+      <button id="reset">重置本项</button
+      ><button id="download" disabled>导出测试记录</button>
+    </footer>
+    <details id="coords">
+      <summary>固件目标坐标</summary>
+      <p>
+        先点一下测试区以测量浏览器工具栏偏移，再按“重置本项”。以下为按设备像素比估算的全屏像素，使用原始截图宽高、100%
+        页面缩放。旋转或滚动后重新测量。
+      </p>
+      <pre id="targets"></pre>
+    </details>
+  </main>
+  <script>
+    "use strict";
+    const $ = (id) => document.getElementById(id),
+      arena = $("arena"),
+      list = $("list"),
+      plot = $("plot"),
+      statusBox = $("status");
+    const HOLD = 650,
+      SLOP = 12,
+      GATE = 16,
+      LANE = 22,
+      DWELL = 400; // ms and CSS pixels
+    const reports = [];
+    let mode = "drag",
+      order,
+      gates,
+      stroke,
+      active = null,
+      done = false,
+      offset = null;
+    function say(s, ok) {
+      statusBox.textContent = s;
+      statusBox.dataset.ok = ok === undefined ? "" : String(ok);
+    }
+    function local(e) {
+      const r = arena.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
+    function distance(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+    function segmentDist(p, a, b) {
+      const dx = b.x - a.x,
+        dy = b.y - a.y;
+      const t = Math.max(
+        0,
+        Math.min(
+          1,
+          ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy),
+        ),
+      );
+      return distance(p, { x: a.x + t * dx, y: a.y + t * dy });
+    }
+    function renderRows() {
+      list.replaceChildren();
+      order.forEach((name) => {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.textContent = name;
+        list.append(row);
+      });
+    }
+    function renderPath() {
+      const w = arena.clientWidth,
+        h = arena.clientHeight;
+      const route =
+        mode === "relay"
+          ? [
+              [0.16, 0.74],
+              [0.76, 0.7],
+              [0.31, 0.26],
+              [0.84, 0.24],
+            ]
+          : [
+              [0.14, 0.72],
+              [0.38, 0.25],
+              [0.65, 0.72],
+              [0.86, 0.28],
+            ];
+      gates = route.map(([x, y]) => ({ x: x * w, y: y * h }));
+      plot.innerHTML =
+        '<polyline class="lane" stroke-width="' +
+        2 * LANE +
+        '" points="' +
+        gates.map((p) => p.x + "," + p.y).join(" ") +
+        '"/>' +
+        gates
+          .map(
+            (p, i) =>
+              '<circle cx="' +
+              p.x +
+              '" cy="' +
+              p.y +
+              '" r="' +
+              GATE +
+              '"/><text x="' +
+              p.x +
+              '" y="' +
+              p.y +
+              '">' +
+              (i + 1) +
+              "</text>",
+          )
+          .join("") +
+        '<polyline class="trace"/>';
+      stroke = plot.lastElementChild;
+    }
+    function updateTargets() {
+      if (!offset) {
+        $("targets").textContent = "等待测量";
+        return;
+      }
+      const r = arena.getBoundingClientRect(),
+        d = devicePixelRatio;
+      const points =
+        mode !== "drag"
+          ? gates.map((p) => [p.x + r.left, p.y + r.top])
+          : Array.from(list.children, (row) => {
+              const b = row.getBoundingClientRect();
+              return [b.left + b.width / 2, b.top + b.height / 2];
+            });
+      $("targets").textContent =
+        "屏幕 " +
+        Math.round(screen.width * d) +
+        " × " +
+        Math.round(screen.height * d) +
+        " px\n" +
+        points
+          .map(
+            ([x, y], i) =>
+              (mode !== "drag" ? i + 1 : order[i]) +
+              "  (" +
+              Math.round((x + offset.x) * d) +
+              ", " +
+              Math.round((y + offset.y) * d) +
+              ")",
+          )
+          .join("\n");
+    }
+    function prepare(m) {
+      if (active) finish("测试被重置");
+      mode = m;
+      done = false;
+      order = ["A", "B", "C"];
+      renderRows();
+      renderPath();
+      list.hidden = m !== "drag";
+      plot.toggleAttribute("hidden", m === "drag");
+      $("relay").setAttribute("aria-pressed", m === "relay");
+      $("drag").setAttribute("aria-pressed", m === "drag");
+      $("path").setAttribute("aria-pressed", m === "path");
+      $("hint").textContent =
+        m === "drag"
+          ? "按住 A 至少 650 ms，再拖到 C 上松开。通过后顺序变为 B、C、A。"
+          : m === "relay"
+            ? "在 1 按住 650 ms，沿通道到 2 后停留 400 ms，再折返经过 3，最后到 4 内松开。"
+            : "从 1 开始，沿浅色通道依次经过 2、3，在 4 内松开。全程保持同一触点。";
+      say("等待按下");
+      updateTargets();
+    }
+    function sample(e) {
+      const p = local(e);
+      active.events.push({
+        type: e.type,
+        id: e.pointerId,
+        ms: Math.round((e.timeStamp - active.start) * 10) / 10,
+        timeStamp: e.timeStamp,
+        x: p.x,
+        y: p.y,
+        screenX: e.screenX,
+        screenY: e.screenY,
+      });
+      return p;
+    }
+    function fault(msg) {
+      if (!active.reason) active.reason = msg;
+    }
+    function finish(reason) {
+      if (!active) return;
+      const a = active;
+      clearTimeout(a.timer);
+      const fail = a.reason || reason || "";
+      if (mode === "drag" && !fail) {
+        order = ["B", "C", "A"];
+      }
+      if (mode === "drag") renderRows();
+      reports.push({
+        mode,
+        passed: !fail,
+        reason: fail,
+        source: a.source,
+        started: a.wall,
+        dpr: a.dpr,
+        screenCss: a.screenCss,
+        screenOffset: a.offset,
+        arena: a.rect,
+        targets: a.targets,
+        thresholds: {
+          holdMs: HOLD,
+          slopCss: SLOP,
+          gateRadiusCss: GATE,
+          laneRadiusCss: LANE,
+          dwellMs: mode === "relay" ? DWELL : null,
+        },
+        dwellMs: a.dwellMs ?? null,
+        order: mode === "drag" ? [...order] : null,
+        gatesReached: mode !== "drag" ? a.next : null,
+        events: a.events,
+      });
+      active = null;
+      done = true;
+      $("download").disabled = false;
+      say(
+        fail
+          ? "失败 · " + fail
+          : "通过 · " + (mode === "drag" ? "顺序 B、C、A" : "依次通过全部路标"),
+        !fail,
+      );
+    }
+    function inRow(e, row) {
+      const b = row.getBoundingClientRect();
+      return (
+        e.clientX >= b.left &&
+        e.clientX <= b.right &&
+        e.clientY >= b.top &&
+        e.clientY <= b.bottom
+      );
+    }
+    arena.oncontextmenu = (e) => e.preventDefault();
+    arena.onpointerdown = (e) => {
+      if (active) {
+        if (e.pointerId !== active.id) {
+          sample(e);
+          fault("出现第二个触点");
+        }
+        return;
+      }
+      offset = { x: e.screenX - e.clientX, y: e.screenY - e.clientY };
+      updateTargets();
+      if (done) return;
+      const r = arena.getBoundingClientRect();
+      active = {
+        id: e.pointerId,
+        source: e.pointerType,
+        start: e.timeStamp,
+        wall: new Date().toISOString(),
+        dpr: devicePixelRatio,
+        screenCss: [screen.width, screen.height],
+        offset: { ...offset },
+        rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+        targets:
+          mode !== "drag"
+            ? gates.map((p) => ({ ...p }))
+            : Array.from(list.children, (row) =>
+                row.getBoundingClientRect().toJSON(),
+              ),
+        next: 0,
+        events: [],
+        points: [],
+        reason: "",
+      };
+      arena.setPointerCapture(e.pointerId);
+      const p = sample(e);
+      active.origin = p;
+      if (mode === "drag") {
+        if (!inRow(e, list.firstElementChild)) fault("起点未落在 A 上");
+        active.timer = setTimeout(() => {
+          if (active && !active.reason) {
+            list.firstElementChild.classList.add("armed");
+            say("已长按，可以拖到 C");
+          }
+        }, HOLD);
+      } else if (distance(p, gates[0]) > GATE) fault("起点未落在 1 内");
+      else active.next = 1;
+      if (active.reason) say(active.reason, false);
+    };
+    // A second finger can land outside the arena while the first is captured.
+    document.addEventListener(
+      "pointerdown",
+      (e) => {
+        if (active && e.pointerId !== active.id && !arena.contains(e.target)) {
+          sample(e);
+          fault("出现第二个触点");
+        }
+      },
+      true,
+    );
+    function progress(e) {
+      if (!active || e.pointerId !== active.id) return;
+      const a = active,
+        p = sample(e);
+      if (mode === "drag") {
+        if (distance(p, a.origin) > SLOP) {
+          if (e.timeStamp - a.start < HOLD) fault("长按满 650 ms 之前已移动");
+          if (e.type === "pointermove") a.moved = true;
+        }
+        if (e.type === "pointermove") {
+          if (inRow(e, list.children[1])) a.crossedMiddle = true;
+          if (inRow(e, list.lastElementChild) && a.crossedMiddle)
+            a.enteredTarget = true;
+        }
+        list.lastElementChild.classList.toggle(
+          "target",
+          !a.reason && a.moved && inRow(e, list.lastElementChild),
+        );
+      } else {
+        if (mode === "relay") {
+          if (e.timeStamp - a.start < HOLD && distance(p, a.origin) > SLOP)
+            fault("起点长按时间不足");
+          if (
+            a.enteredStop !== undefined &&
+            a.dwellMs === undefined &&
+            distance(p, gates[1]) > GATE
+          ) {
+            a.dwellMs = e.timeStamp - a.enteredStop;
+            if (a.dwellMs < DWELL) fault("在 2 的停留不足 400 ms");
+          }
+        }
+        a.points.push(p.x + "," + p.y);
+        stroke.setAttribute("points", a.points.join(" "));
+        if (a.next > 0 && a.next < gates.length) {
+          if (segmentDist(p, gates[a.next - 1], gates[a.next]) > LANE)
+            fault("轨迹离开通道或跳过路标");
+          const prev = gates[a.next - 1],
+            next = gates[a.next],
+            len = distance(prev, next);
+          const fraction =
+            ((p.x - prev.x) * (next.x - prev.x) +
+              (p.y - prev.y) * (next.y - prev.y)) /
+            (len * len);
+          if (e.type === "pointermove" && fraction >= 0.2 && fraction <= 0.8)
+            a.interior = true;
+          if (distance(p, next) <= GATE) {
+            if (!a.interior) fault("相邻路标间缺少移动采样");
+            if (mode === "relay" && a.next === 1) {
+              a.enteredStop = e.timeStamp;
+              say("在 2 停留 400 ms，再向 3 折返");
+            }
+            a.next++;
+            a.interior = false;
+          }
+        } else if (a.next === gates.length && distance(p, gates[3]) > LANE)
+          fault("到达终点后离开通道");
+      }
+    }
+    arena.onpointermove = (e) => {
+      const samples = e.getCoalescedEvents?.() || [];
+      for (const s of samples) progress(s);
+      progress(e);
+    };
+    arena.onpointerup = (e) => {
+      if (!active || e.pointerId !== active.id) return;
+      progress(e);
+      if (mode === "drag") {
+        if (
+          e.timeStamp - active.start < HOLD ||
+          !active.moved ||
+          !active.enteredTarget ||
+          !inRow(e, list.lastElementChild)
+        )
+          fault("需长按并在 C 内松开");
+      } else if (active.next !== 4 || distance(local(e), gates[3]) > GATE)
+        fault("未连续经过全部路标并在终点松开");
+      finish();
+    };
+    arena.onpointercancel = (e) => {
+      if (active && e.pointerId === active.id) {
+        sample(e);
+        finish("触点被系统取消");
+      }
+    };
+    arena.onlostpointercapture = (e) => {
+      if (active && e.pointerId === active.id) finish("失去触点捕获");
+    };
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && active) finish("页面离开前台");
+    });
+    $("relay").onclick = () => prepare("relay");
+    $("drag").onclick = () => prepare("drag");
+    $("path").onclick = () => prepare("path");
+    $("reset").onclick = () => prepare(mode);
+    $("download").onclick = () => {
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify({ version: 1, reports }, null, 2)], {
+          type: "application/json",
+        }),
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "bw16-gesture-events.json";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    onresize = () => {
+      if (active) finish("页面尺寸改变");
+      offset = null;
+      renderPath();
+      updateTargets();
+    };
+    onscroll = () => {
+      updateTargets();
+    };
+    $("coords").ontoggle = updateTargets;
+    prepare("drag");
+  </script>
+</html>

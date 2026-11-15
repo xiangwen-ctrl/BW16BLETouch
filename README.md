@@ -29,7 +29,7 @@ void loop() {
 ```
 
 1. Install the Realtek **AmebaD 3.1.7** board package and select **Ai-Thinker BW16 (RTL8720DN)**. The package provides AmebaBLE and WiFi. See the [Realtek setup guide](https://ameba-doc-arduino-sdk.readthedocs-hosted.com/en/latest/ameba_d/bw16-typeb/Getting_Started/Getting%20Started%20with%20BW16.html).
-2. Download `BW16BLETouch-0.3.1.zip` from the [release page](https://github.com/xiangwen-ctrl/BW16BLETouch/releases/tag/v0.3.1). In Arduino IDE choose **Sketch → Include Library → Add .ZIP Library**. For manual installation, put the repository under the sketchbook's `libraries/BW16BLETouch` directory with `library.properties` directly inside.
+2. Download `BW16BLETouch-0.4.0.zip` from the [release page](https://github.com/xiangwen-ctrl/BW16BLETouch/releases/tag/v0.4.0). In Arduino IDE choose **Sketch → Include Library → Add .ZIP Library**. For manual installation, put the repository under the sketchbook's `libraries/BW16BLETouch` directory with `library.properties` directly inside.
 3. Upload the sketch and reset the board. Pair **BW16 Touch** in Android's Bluetooth settings. Open a drawing or touch-test app.
 4. Set Serial Monitor to **115200** and send `t` to tap the center. Call the same method from a button or timer in your own sketch.
 
@@ -43,6 +43,28 @@ touch.doubleTapPixel(540, 1200);                  // 120 ms between taps
 touch.longPressPixel(270, 840, 800);               // hold for 800 ms
 touch.swipePixel(180, 1600, 900, 1600, 600, 30);   // swipe right in 30 steps
 ```
+
+### Hold before dragging, or follow a path
+
+```cpp
+// Uses the configured screenshot resolution.
+touch.longPressDragPixel(540, 900, 540, 1500, 850, 900, 45);
+
+const BW16BLETouch::PathPoint route[] = {
+    // X, Y, travel from previous point (ms), hold after arrival (ms)
+    {180, 1500,   0, 850},
+    {820, 1450, 900, 600},
+    {350,  900, 900,   0},
+    {900,  850, 900,   0}
+};
+touch.swipePathPixel(route, sizeof(route) / sizeof(route[0]), 45);
+```
+
+`longPressDrag()` takes start/end coordinates, then `holdMs=800`, `durationMs=400`, `steps=20`, and optional `Units`. `longPressDragPixel()` takes the same arguments with pixel coordinates. A zero hold is allowed.
+
+`swipePath(points, count, stepsPerSegment=20, units=Units::Hid)` and `swipePathPixel(points, count, stepsPerSegment=20)` keep one contact down for the entire route. Each `PathPoint` contains signed 32-bit X/Y and unsigned 16-bit `travelMs`/`holdMs`. The first travel time must be zero; every later travel time must be at least `stepsPerSegment`, which must be positive. At least two points are required. Holds can be zero, including the first and last holds. The example holds initially, moves to the next point, pauses there, reverses direction and finally releases.
+
+The entire route is validated before pressing. Keep the array valid and unchanged until the call returns. Movement is linear between points, with the same step count on each segment. Calls block through travel and holds. A disconnect aborts the remaining route; a new connection requires a new gesture.
 
 ## API reference
 
@@ -59,9 +81,11 @@ All instances share the board's BLE peripheral, HID service and contact state. M
 | `tap(x,y,holdMs=60)` | Press, hold for the specified time, then release. |
 | `doubleTap(x,y,intervalMs=120)` | Two 60 ms taps. The interval runs from the first release to the second press. |
 | `longPress(x,y,holdMs=800)` | Holds for the requested duration. Android and the target app determine the long-press threshold. |
+| `longPressDrag(x1,y1,x2,y2,holdMs=800,durationMs=400,steps=20)` | Holds at the start, moves continuously, then releases. |
+| `swipePath(points,count,stepsPerSegment=20)` | Validates and follows all waypoints with per-point travel and holds; one press and one release. |
 | `swipe(x1,y1,x2,y2,durationMs=400,steps=20)` | Validates both endpoints, presses, moves in linear steps and releases. Requires 1 ≤ steps ≤ durationMs. Start with 15–30 ms per step. |
 
-Coordinates default to `BW16BLETouch::Units::Hid`. Each method taking coordinates also accepts a final `Units::Pixels` argument (use `using Units = BW16BLETouch::Units;`). The equivalent pixel shortcuts are `pressPixel`, `moveToPixel`, `tapPixel`, `doubleTapPixel`, `longPressPixel` and `swipePixel`. They use the same timing defaults; `release()` works with either coordinate system.
+Coordinates default to `BW16BLETouch::Units::Hid`. Each method taking coordinates also accepts a final `Units::Pixels` argument (use `using Units = BW16BLETouch::Units;`). The equivalent pixel shortcuts are `pressPixel`, `moveToPixel`, `tapPixel`, `doubleTapPixel`, `longPressPixel`, `swipePixel`, `longPressDragPixel` and `swipePathPixel`. They use the same timing defaults; `release()` works with either coordinate system.
 
 Times and step counts are unsigned 16-bit integers. A successful gesture call means the reports were submitted to the local BLE stack. AmebaBLE provides no Android delivery acknowledgement. Invalid coordinates, missing pixel dimensions, incompatible contact state and detected disconnects return false. After an invalid move, call `release()` to lift at the last valid position.
 
@@ -85,6 +109,7 @@ Check the center and two asymmetric points, for example (20%, 40%) and (80%, 30%
 Open **File → Examples → BW16BLETouch** in Arduino IDE.
 
 - [BasicTouch](examples/BasicTouch/BasicTouch.ino) waits two seconds after detecting a connection, then demonstrates a tap, a long press and a swipe once per connection.
+- [AdvancedGestures](examples/AdvancedGestures/AdvancedGestures.ino) demonstrates a hold-then-drag, a polyline, and a path with an initial hold and an intermediate pause. Edit the generic screenshot dimensions and points for your target. Send `d`, `p` or `h` over Serial Monitor.
 - [SerialCommand](examples/SerialCommand/SerialCommand.ino) accepts one command per line at 115200 baud. Try `status`, `size 1080 2400`, then `pixel 540 1200`. Other commands are `rotation DEG`, `tap X Y`, `longpress X Y MS` and `swipe X1 Y1 X2 Y2 MS STEPS`. Only `pixel` takes pixel coordinates.
 - [WiFiHttpControl](examples/WiFiHttpControl/WiFiHttpControl.ino) connects to a 2.4 or 5 GHz network using the SSID and password you enter in the sketch. Open the IP printed on Serial Monitor, select a gesture and choose HID or screen pixels. The board sends the gesture to the Android host over BLE.
 
@@ -106,6 +131,10 @@ curl -X POST http://192.168.1.50/px/1080/2400/swipe/180/1600/900/1600/600/30
 
 Each pixel request supplies its own W and H. MS is 1–65535. The client timeout should exceed the gesture duration. HTTP 200 indicates submission, 400 invalid parameters, 404 an unknown route, and 409 an unavailable touch device. The example uses unauthenticated HTTP on a trusted LAN.
 
+## Gesture acceptance page
+
+Open [tools/gesture-lab/index.html](tools/gesture-lab/index.html) in the Android browser, or serve it on your LAN. The [tool instructions](tools/gesture-lab/README.md) cover screen coordinate calibration, pass/fail thresholds and automated browser checks. The page checks long-press reordering, a continuous polyline, and a hold followed by a path with a stop and reversal. Exported JSON includes pointer IDs, event timestamps, screen coordinates and verdicts.
+
 ## Troubleshooting
 
 - **Connected but no touches.** Enable the input-device option if Android offers it, allow HID discovery to complete, and use Android's **Pointer location** or a drawing app to check events on the active display.
@@ -119,7 +148,7 @@ Each pixel request supplies its own W and H. MS is 1–65535. The client timeout
 | --- | --- | --- |
 | Ai-Thinker BW16-Kit, AmebaD 3.1.7 | Xiaomi Pad 6 Pro, 1800 × 2880 portrait | Pixel taps, holds and swipes over serial; all three gestures from a browser and direct HTTP requests on a 5 GHz LAN. |
 
-Across the six network gesture tests the largest per-axis endpoint difference reported by the tablet was 0.5 screen pixels. Calibrate each new display independently.
+Across the six network gesture tests the largest per-axis endpoint difference reported by the tablet was 0.5 screen pixels. Calibrate each new display independently. The packaged longPressDragPixel() and swipePathPixel() APIs also passed long-press reordering, a four-point polyline, and a hold/reversal/pause route on the same host. The first movement in the drag was recorded at 903 ms with an 850 ms configured initial hold. The combined route recorded 686 ms inside gate 2 with a 600 ms configured hold; this includes movement inside the gate radius. Each gesture used one pointer ID from press through release.
 
 **Manual reconnection.** The paired tablet registered a tap at (450.49, 1400.45). On the same boot, the sketch called `end()`, confirmed the link was down, and called `begin()` again. After manually reconnecting the existing pairing, the tablet registered a second tap at (900.49, 1400.45) using the original pixel dimensions.
 
@@ -131,7 +160,7 @@ The single-finger Digitizers / Touch Screen descriptor uses report ID 1. Each in
 
 ## Regression tests
 
-The [host regression test](tests/README.md) exercises disconnect and reconnect between sketch calls, including interrupted gestures.
+The [host tests](tests/README.md) exercise disconnect and reconnect between sketch calls, interrupted gestures, complete-path validation, timing and pixel mapping.
 
 ## License
 

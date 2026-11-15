@@ -30,7 +30,7 @@ void loop() {
 ```
 
 1. 在 Arduino IDE 安装 Realtek **AmebaD 3.1.7** 板卡包，并选择 **Ai-Thinker BW16 (RTL8720DN)**。首次配置可参考 [Realtek BW16 安装指南](https://ameba-doc-arduino-sdk.readthedocs-hosted.com/en/latest/ameba_d/bw16-typeb/Getting_Started/Getting%20Started%20with%20BW16.html)。
-2. 从 [v0.3.1 发布页](https://github.com/xiangwen-ctrl/BW16BLETouch/releases/tag/v0.3.1) 下载 `BW16BLETouch-0.3.1.zip`，选择「项目 → 加载库 → 添加 .ZIP 库」。手动安装时，将仓库目录放到草图簿的 `libraries/BW16BLETouch` 下，确保目录内直接包含 `library.properties`。
+2. 从 [v0.4.0 发布页](https://github.com/xiangwen-ctrl/BW16BLETouch/releases/tag/v0.4.0) 下载 `BW16BLETouch-0.4.0.zip`，选择「项目 → 加载库 → 添加 .ZIP 库」。手动安装时，将仓库目录放到草图簿的 `libraries/BW16BLETouch` 下，确保目录内直接包含 `library.properties`。
 3. 新建草图，粘贴以上代码，选择 BW16 的 USB 串口并上传。按 RST 后，在 Android 系统蓝牙设置中配对 **BW16 Touch**。
 4. 打开绘图或触点测试页面，将 Arduino 串口监视器设为 **115200**，发送字母 `t`。屏幕中心应收到一次点击。自己的按钮或定时器可以直接调用同一个 `touch.tap()`。
 
@@ -50,6 +50,27 @@ touch.longPressPixel(270, 840, 800);              // 按住 800 ms
 touch.swipePixel(180, 1600, 900, 1600, 600, 30);  // 向右滑动
 ```
 
+### 长按拖动与路径滑动
+
+```cpp
+touch.longPressDragPixel(540, 900, 540, 1500, 850, 900, 45);
+
+const BW16BLETouch::PathPoint route[] = {
+    // X、Y、从前一点移来的时长、到达后的停留时长，时间单位为 ms
+    {180, 1500,   0, 850},
+    {820, 1450, 900, 600},
+    {350,  900, 900,   0},
+    {900,  850, 900,   0}
+};
+touch.swipePathPixel(route, sizeof(route) / sizeof(route[0]), 45);
+```
+
+`longPressDrag()` 依次接受起终点坐标、`holdMs=800`、`durationMs=400`、`steps=20` 和可选的 `Units`。`longPressDragPixel()` 的坐标使用像素。初始停留可以为零。
+
+`swipePath(points, count, stepsPerSegment=20, units=Units::Hid)` 和 `swipePathPixel(points, count, stepsPerSegment=20)` 全程只保持一个触点。`PathPoint` 的 X/Y 为有符号 32 位整数，`travelMs` 和 `holdMs` 为无符号 16 位整数。第一个点的 travelMs 必须为零，后续各点的 travelMs 必须至少等于正数 stepsPerSegment。路径至少两个点，每个点的 holdMs 都可以为零，包括起点和终点。上例在起点长按，向下一点移动并停靠，再折返、到终点抬起。
+
+整条路径在按下前完成校验。调用返回前，数组需始终有效且保持原值。每段按相同的步数线性插值；调用会等待移动和停留完成。任何阶段断线都会终止后续路径，新连接需发起新手势。
+
 ## API 参考
 
 库使用 AmebaD 的全局 BLE 外设和 HID 服务。所有实例共享一套状态，在同一个任务中顺序调用，勿与另一个直接管理 `BLE` 的外设库并用。手势会阻塞调用方直到提交抬起帧或检测到断连。
@@ -68,7 +89,7 @@ touch.swipePixel(180, 1600, 900, 1600, 600, 30);  // 向右滑动
 | `longPress(x, y, holdMs, units)` | 默认按住 800 ms。长按阈值由 Android 和应用决定。 |
 | `swipe(x1, y1, x2, y2, durationMs, steps, units)` | 按下、按时间线性插值移动到终点、抬起。默认 400 ms、20 步。两个端点均在按下前校验，要求 1 ≤ steps ≤ durationMs。 |
 
-所有带 `units` 的方法默认使用 `Units::Hid`，显式传入 `Units::Pixels` 可使用像素坐标。另有 `pressPixel(x,y)`、`moveToPixel(x,y)`、`tapPixel(x,y,holdMs=60)`、`doubleTapPixel(x,y,intervalMs=120)`、`longPressPixel(x,y,holdMs=800)` 和 `swipePixel(x1,y1,x2,y2,durationMs=400,steps=20)` 简写。
+所有带 `units` 的方法默认使用 `Units::Hid`，显式传入 `Units::Pixels` 可使用像素坐标。另有 `pressPixel(x,y)`、`moveToPixel(x,y)`、`tapPixel(x,y,holdMs=60)`、`doubleTapPixel(x,y,intervalMs=120)`、`longPressPixel(x,y,holdMs=800)` 和 `swipePixel(x1,y1,x2,y2,durationMs=400,steps=20)` 简写。新增 `longPressDragPixel()` 和 `swipePathPixel()` 分别使用上述长按拖动和路径参数。
 
 
 手势的时长、间隔和步数参数为 uint16_t。建议先按每 15–30 ms 一步调试滑动。成功返回 true 表示调用已向本地 BLE 栈提交所需报告。AmebaBLE 的 `inputReport()` 返回 void，无法提供主机接收确认。断连、坐标越界、未配置像素尺寸或触点状态不匹配时返回 false。分步拖拽中若移动参数有误，仍可在最后有效位置调用 `release()`。库会根据蓝牙栈的断连通知让旧触点失效，即使草图在离线期间没有调用库。重连后请重新按下。
@@ -97,6 +118,10 @@ touch.swipePixel(180, 1600, 900, 1600, 600, 30);  // 向右滑动
 ### [BasicTouch](examples/BasicTouch/BasicTouch.ino)
 
 在配对前打开测试页面。每次检测到新连接，示例等待 2 秒，然后演示中心点击、左上长按、底部从左向右滑动；同一连接只演示一次。
+
+### [AdvancedGestures](examples/AdvancedGestures/AdvancedGestures.ino)
+
+演示长按拖动、折线路径，以及带起点长按和中途停靠的路径。按目标截图修改示例宽高和通用坐标，串口发送 `d`、`p` 或 `h` 触发。
 
 ### [SerialCommand](examples/SerialCommand/SerialCommand.ino)
 
@@ -134,6 +159,10 @@ curl -X POST http://192.168.1.50/px/1080/2400/longpress/270/840/800
 curl -X POST http://192.168.1.50/px/1080/2400/swipe/180/1600/900/1600/600/30
 ```
 
+## 手势验收页
+
+在 Android 浏览器打开 [tools/gesture-lab/index.html](tools/gesture-lab/index.html)，也可通过局域网提供该页面。[工具说明](tools/gesture-lab/README.md)包含坐标校准、验收阈值和自动化检查方法。页面验收长按排序、连续折线，以及带长按、停靠和折返的路径；导出的 JSON 包含触点 ID、时间、全屏坐标和判定。
+
 ## 设备配对与排查
 
 - **能连接但没有触控**。在系统蓝牙设置中打开该设备的「输入设备」开关（若系统提供），等待首次配对完成。在开发者选项打开「指针位置」或「显示点按操作」，用绘图页面复测。如仅出现光标，检查 Android 对外部触摸屏的识别和当前活动显示屏。不同厂商的映射可能有差异。
@@ -147,7 +176,7 @@ curl -X POST http://192.168.1.50/px/1080/2400/swipe/180/1600/900/1600/600/30
 | --- | --- | --- |
 | Ai-Thinker BW16-Kit · AmebaD 3.1.7 | 小米 Pad 6 Pro，竖屏 1800 × 2880 | 串口像素单击、长按、滑动；5 GHz 局域网网页与独立 HTTP 接口各执行三种手势 |
 
-在这六次网络手势测试中，平板浏览器回传的起点和终点换算到屏幕像素后，单轴偏差最大为 0.5 像素。其他设备可按上方三点法校准。三个随库示例均已使用 BW16 板型编译。
+在这六次网络手势测试中，平板浏览器回传的起点和终点换算到屏幕像素后，单轴偏差最大为 0.5 像素。其他设备可按上方三点法校准。四个随库示例均已使用 BW16 板型编译。封装后的 longPressDragPixel()、swipePathPixel() 也已在同一设备上完成长按排序、四点折线和长按折返停靠验收。长按拖动配置起点停留 850 ms，首次移动实测约 903 ms；复合路径配置中途停留 600 ms，路标半径内停留实测约 686 ms（含半径内移动）。每项全程保持一个触点 ID，直至终点抬起。
 
 **手动重连。** 平板先记录到点击 (450.49, 1400.45)。在同一次上电中，草图执行 `end()`，确认连接已断开，再执行 `begin()`。在平板上手动连接原配对后，沿用原像素尺寸的第二次点击落在 (900.49, 1400.45)。
 
